@@ -8,10 +8,21 @@ Created on Sat Oct 28 00:08:47 2023
 
 import pandas as pd
 import numpy as np
-from os import path, makedirs
+from os import makedirs
+from os.path import join, dirname
 
-datapath = "/Volumes/Lab Drive/231023 DiI and DiO in liposomes/Fewer wells selected.xlsx"
-instructions_path = "/Volumes/Lab Drive/231023 DiI and DiO in liposomes/reformat.md"
+paths_path = "./paths.md"
+datapath, instructions_path = None, None
+with open(paths_path) as file:
+    for line in file:
+        split = line.split(':')
+        name = split[0].strip()
+        path = ':'.join(split[1:]).strip()
+        if name == "reformat.md":
+            instructions_path = path
+        elif name == "Input Excel file":
+            datapath = path
+assert (datapath and instructions_path) is not None
 
 num_of_measurements = 0
 found_actualTemperature = False
@@ -36,14 +47,9 @@ for i, (row_name, line) in enumerate(pd.read_excel(datapath).iterrows()):
         measurement_index = (i - start_index) % num_of_measurements
         measurements[measurement_index].append(line.iloc[2:(2+len(columnNumbers))])
 
-folder = path.dirname(datapath)
-folder = path.join(folder, "Reformatted")
+folder = dirname(datapath)
+folder = join(folder, "Reformatted")
 makedirs(folder, exist_ok = True)
-for i, rows in enumerate(measurements):
-    measurement = pd.DataFrame(data = np.array(rows), index = pd.Index(rowLetters, name = "Row"), columns = columnNumbers)
-    measurements[i] = measurement
-    print(measurement)
-    measurement.rename_axis(None).to_excel(path.join(folder, f"Measurement_{i+1}.xlsx"))
 
 def melt(dataframe, id_vars = "Row", var_name = "Column", value_name = "Value"):
     melted = dataframe.reset_index().melt(id_vars = id_vars, var_name = var_name, value_name = value_name)
@@ -53,13 +59,16 @@ def melt(dataframe, id_vars = "Row", var_name = "Column", value_name = "Value"):
 def melt_multiple(dataframe_list):
     for dataframe in dataframe_list:
         yield melt(dataframe)
-for i, melted in enumerate(melt_multiple(measurements)):
-    melted.to_csv(path.join(folder, f"Measurement_{i+1}_longFormat.csv"), index = None)
 
 
-measurements_names = np.zeros((num_of_measurements, 1), dtype = object)
-# column_names = np.zeros((len(columnNumbers), 1), dtype = object)
+for i, rows in enumerate(measurements):
+    measurement = pd.DataFrame(data = np.array(rows), index = pd.Index(rowLetters, name = "Row"), columns = columnNumbers)
+    measurements[i] = measurement
+
+
+measurements_names = [None]*num_of_measurements
 column_names = [None]*len(columnNumbers)
+columns_represent = None
 mode = None
 mode_names = ["Measurements", "Columns", "Groups"]
 def split_numbered(string):
@@ -80,6 +89,7 @@ replacements = []
 with open(instructions_path) as instructions:
     for line in instructions:
         line = line.strip()
+        if line == '': continue
         if line in mode_names:
             mode = line
             continue
@@ -87,6 +97,9 @@ with open(instructions_path) as instructions:
             number, name = split_numbered(line)
             measurements_names[number - 1] = name
         elif mode == "Columns":
+            if line.startswith("Represent"):
+                columns_represent = line.removeprefix("Represent ")
+                continue
             number, name = split_numbered(line)
             if name == r"\skip": continue
             column_names[number - 1] = name
@@ -102,6 +115,7 @@ nan = float('nan')
 with open(instructions_path) as instructions:
     for line in instructions:
         line = line.strip()
+        if line == '': continue
         if line in mode_names:
             mode = line
             continue
@@ -110,7 +124,6 @@ with open(instructions_path) as instructions:
             letters, name = split_lettered(line)
             for i, measurement in enumerate(measurements):
                 selection = measurement.loc[letters]
-                print(selection)
                 for replacement in replacements:
                     new_index, old_index = replacement
                     try:
@@ -118,11 +131,16 @@ with open(instructions_path) as instructions:
                     except KeyError:
                         continue
                     selection.loc[old_index] = measurement.loc[new_index]
-                print(selection.index)
-                selection = selection.rename(
-                    # index = {letter: j+1 for j, letter in enumerate(letters)},
-                    columns = {j: f"{j}: {column_names[j]}" for j in range(len(columnNumbers))} )
-                print(selection.index)
-                selection.index.name = "Subsample"
-                melted = melt(selection, id_vars = "Subsample", var_name = "Column", value_name = "Value")
-                melted.to_csv(path.join(folder, f"{name}_Measurement_{i+1}_longFormat.csv"), index = None)
+                melted = melt(selection)
+                melted = pd.concat([
+                    pd.Series([letters.index(item)+1 for item in melted["Row"]], name = "Row name (subsample)"),
+                    pd.Series([column_names[item] for item in melted["Column"]], name = "Column name" + (columns_represent is not None)*f" (represents {columns_represent})"),
+                    melted
+                ], axis = 1)
+                melted.to_csv(join(folder, f"{name}_{measurements_names[i]}_longFormat.csv"), index = None)
+
+for i, measurement in enumerate(measurements):
+    measurement.rename_axis(None).to_excel(join(folder, f"{measurements_names[i]}.xlsx"))
+
+for i, melted in enumerate(melt_multiple(measurements)):
+    melted.to_csv(join(folder, f"{measurements_names[i]}_longFormat.csv"), index = None)
