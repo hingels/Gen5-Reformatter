@@ -1,10 +1,12 @@
 Measurements
+
 1. DiO
 2. DiI
 3. DiO excitation DiI emission
 
 Columns
 Represent µL per dye
+
 1. 0
 2. 10
 3. 20
@@ -13,7 +15,7 @@ Represent µL per dye
 6. 50
 7. \skip
 8. \skip
-9. ?
+9. 50\trait 0µL liposomes
 
 Groups
 A,B,C. Aspirated from top

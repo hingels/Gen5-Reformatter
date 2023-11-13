@@ -67,7 +67,7 @@ for i, rows in enumerate(measurements):
 
 
 measurements_names = [None]*num_of_measurements
-column_names = [None]*len(columnNumbers)
+column_names = dict()
 columns_represent = None
 mode = None
 mode_names = ["Measurements", "Columns", "Groups"]
@@ -102,7 +102,7 @@ with open(instructions_path) as instructions:
                 continue
             number, name = split_numbered(line)
             if name == r"\skip": continue
-            column_names[number - 1] = name
+            column_names[number] = name
         elif mode == "Groups":
             if line.startswith("Use"):
                 split = line.removeprefix("Use ").split(" instead of ")
@@ -132,9 +132,17 @@ with open(instructions_path) as instructions:
                         continue
                     selection.loc[old_index] = measurement.loc[new_index]
                 melted = melt(selection)
+                melted_names = [column_names[item] for item in melted["Column"] if item in column_names]
+                column_traits = [None]*len(melted_names)
+                for j, item in enumerate(melted_names):
+                    if r'\trait' in item:
+                        split = item.split(r'\trait')
+                        melted_names[j] = split[0]
+                        column_traits[j] = split[1]
                 melted = pd.concat([
                     pd.Series([letters.index(item)+1 for item in melted["Row"]], name = "Row name (subsample)"),
-                    pd.Series([column_names[item] for item in melted["Column"]], name = "Column name" + (columns_represent is not None)*f" (represents {columns_represent})"),
+                    pd.Series(melted_names, name = "Column name" + (columns_represent is not None)*f" (represents {columns_represent})"),
+                    pd.Series(column_traits, name = "Column trait"),
                     melted
                 ], axis = 1)
                 melted.to_csv(join(folder, f"{name}_{measurements_names[i]}_longFormat.csv"), index = None)
